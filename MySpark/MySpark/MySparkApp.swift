@@ -21,9 +21,10 @@ struct MySparkApp: App {
         
         // Define the data schema - what types of objects we want to store
         // Learning Note: Schema([...]) tells SwiftData which @Model classes to manage
-        // We only have EnergyEntry for now, but we could add more models later
+        // We have EnergyEntry for energy tracking and SleepEntry for sleep tracking
         let schema = Schema([
             EnergyEntry.self,
+            SleepEntry.self,
         ])
         
         // Configure how data should be stored

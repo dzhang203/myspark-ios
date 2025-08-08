@@ -26,6 +26,7 @@ struct ContentView: View {
     /// CaseIterable allows us to iterate over all cases if needed
     enum Tab: String, CaseIterable {
         case log = "Log"
+        case sleep = "Sleep"
         case history = "History" 
         case summary = "Summary"
         
@@ -34,6 +35,7 @@ struct ContentView: View {
         var icon: String {
             switch self {
             case .log: return "star.circle"
+            case .sleep: return "moon.circle"
             case .history: return "list.bullet.clipboard"
             case .summary: return "chart.line.uptrend.xyaxis"
             }
@@ -44,6 +46,7 @@ struct ContentView: View {
         var selectedIcon: String {
             switch self {
             case .log: return "star.circle.fill"
+            case .sleep: return "moon.circle.fill"
             case .history: return "list.bullet.clipboard.fill"
             case .summary: return "chart.line.uptrend.xyaxis"
             }
@@ -70,6 +73,14 @@ struct ContentView: View {
                 Text(Tab.log.rawValue)
             }
             .tag(Tab.log) // Learning Note: tag() connects this view to the enum case
+            
+            // MARK: - Sleep Tab
+            SleepLogView()
+                .tabItem {
+                    Image(systemName: selectedTab == .sleep ? Tab.sleep.selectedIcon : Tab.sleep.icon)
+                    Text(Tab.sleep.rawValue)
+                }
+                .tag(Tab.sleep)
             
             // MARK: - History Tab
             HistoryView()
@@ -110,5 +121,5 @@ struct ContentView: View {
 /// Learning Note: This preview shows how all our tabs work together
 #Preview {
     ContentView()
-        .modelContainer(for: EnergyEntry.self, inMemory: true)
+        .modelContainer(for: [EnergyEntry.self, SleepEntry.self], inMemory: true)
 }
