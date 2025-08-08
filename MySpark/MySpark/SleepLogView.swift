@@ -21,8 +21,8 @@ struct SleepLogView: View {
     
     // MARK: - UI State
     
-    /// The hours of sleep input as a string (supports decimal like "7.5")
-    @State private var hoursInput: String = ""
+    /// The selected hours of sleep (defaults to 7.0)
+    @State private var selectedHours: Double = 7.0
     
     /// Whether sleep was interrupted (nil = not specified)
     @State private var wasInterrupted: Bool? = nil
@@ -32,6 +32,7 @@ struct SleepLogView: View {
     
     /// Controls whether bedtime picker is enabled
     @State private var includeBedtime: Bool = false
+    
     
     /// Shows feedback when an entry is successfully saved
     @State private var showingSavedMessage: Bool = false
@@ -50,15 +51,46 @@ struct SleepLogView: View {
     
     // MARK: - Computed Properties
     
-    /// Converts hours input string to Double, returns nil if invalid
-    private var hoursValue: Double? {
-        Double(hoursInput)
+    /// Array of available sleep hour options (12.0 to 0.0 in reverse order)
+    /// This makes scrolling down access larger numbers
+    private var sleepHourOptions: [Double] {
+        stride(from: 0.0, through: 12.0, by: 0.5).map { $0 }.reversed()
     }
     
-    /// Checks if the current input is valid for saving
+    /// Creates a date with 5-minute increments for the DatePicker
+    private var roundedBedtime: Date {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // Default to 11:00 PM today
+        var components = calendar.dateComponents([.year, .month, .day], from: now)
+        components.hour = 23
+        components.minute = 0
+        
+        return calendar.date(from: components) ?? now
+    }
+    
+    /// Helper function to round time to nearest 5-minute increment
+    private func roundToFiveMinutes(_ date: Date) -> Date {
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        
+        let roundedMinute = Int(round(Double(components.minute ?? 0) / 5.0) * 5)
+        
+        var newComponents = DateComponents()
+        newComponents.year = components.year
+        newComponents.month = components.month
+        newComponents.day = components.day
+        newComponents.hour = components.hour
+        newComponents.minute = roundedMinute
+        
+        return calendar.date(from: newComponents) ?? date
+    }
+    
+    /// Checks if the current selection is valid for saving
     private var canSave: Bool {
-        guard let hours = hoursValue else { return false }
-        return hours > 0 && hours <= 24
+        // Always require valid hours regardless of bedtime toggle
+        return selectedHours > 0
     }
     
     /// Creates the feedback message for successful save
@@ -98,25 +130,41 @@ struct SleepLogView: View {
             }
             .padding(.bottom, 20)
             
-            // MARK: - Hours Input Section
-            VStack(spacing: 15) {
+            // MARK: - Hours Section
+            VStack(spacing: 20) {
                 Text("How many hours did you sleep?")
-                    .font(.title3)
+                    .font(.title2)
                     .fontWeight(.semibold)
                 
-                HStack {
-                    TextField("7.5", text: $hoursInput)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .keyboardType(.decimalPad)
-                        .frame(width: 80)
-                        .multilineTextAlignment(.center)
-                        .font(.title2)
+                VStack(spacing: 10) {
+                    // Large display of selected hours
+                    HStack(spacing: 8) {
+                        Text(String(format: "%.1f", selectedHours))
+                            .font(.system(size: 48, weight: .medium, design: .rounded))
+                            .foregroundColor(.primary)
+                        
+                        Text("hours")
+                            .font(.title)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 8)
+                    }
                     
-                    Text("hours")
-                        .font(.title3)
-                        .foregroundColor(.secondary)
+                    // Horizontal picker (hidden when bedtime is included)
+                    if !includeBedtime {
+                        Picker("Hours", selection: $selectedHours) {
+                            ForEach(sleepHourOptions, id: \.self) { hour in
+                                Text(String(format: "%.1f", hour))
+                                    .tag(hour)
+                            }
+                        }
+                        .pickerStyle(WheelPickerStyle())
+                        .frame(height: 120)
+                        .clipShape(Rectangle())
+                    }
                 }
             }
+            .padding(.vertical, 10)
             
             // MARK: - Sleep Interruption Section
             VStack(spacing: 15) {
@@ -142,7 +190,22 @@ struct SleepLogView: View {
                 }
             }
             
-            // MARK: - Bedtime Section
+            // MARK: - Bedtime Section (shown when bedtime IS included)
+            if includeBedtime {
+                VStack(spacing: 20) {
+                    FiveMinuteDatePicker(
+                        selection: Binding(
+                            get: { bedtime ?? roundedBedtime },
+                            set: { bedtime = $0 }
+                        )
+                    )
+                    .frame(height: 120)
+                }
+                .padding(.top, 20) // Extra padding above bedtime picker
+                .padding(.vertical, 10)
+            }
+            
+            // MARK: - Bedtime Toggle
             VStack(spacing: 15) {
                 HStack {
                     Toggle("Include bedtime", isOn: $includeBedtime)
@@ -150,19 +213,7 @@ struct SleepLogView: View {
                         .fontWeight(.semibold)
                     Spacer()
                 }
-                
-                if includeBedtime {
-                    DatePicker(
-                        "When did you fall asleep?",
-                        selection: Binding(
-                            get: { bedtime ?? Date() },
-                            set: { bedtime = $0 }
-                        ),
-                        displayedComponents: .hourAndMinute
-                    )
-                    .datePickerStyle(WheelDatePickerStyle())
-                    .frame(height: 120)
-                }
+                .contentShape(Rectangle()) // Ensures the entire HStack area is tappable
             }
             
             // MARK: - Save Button
@@ -226,15 +277,22 @@ struct SleepLogView: View {
     
     /// Handles the save button tap
     private func handleSaveButtonTap() {
-        guard let hours = hoursValue else { return }
+        let hoursToSave: Double
+        let bedtimeToSave: Date?
+        
+        // Always use the manually selected hours
+        hoursToSave = selectedHours
+        
+        // Include bedtime only if toggle is on
+        bedtimeToSave = includeBedtime ? bedtime : nil
         
         // Check for recent entries within the last 4 hours
         if let duplicateEntry = findRecentEntry(withinHours: 4) {
-            pendingSleepData = (hours, wasInterrupted, includeBedtime ? bedtime : nil)
+            pendingSleepData = (hoursToSave, wasInterrupted, bedtimeToSave)
             recentEntry = duplicateEntry
             showingDuplicateAlert = true
         } else {
-            saveSleepEntry(hours: hours, interrupted: wasInterrupted, bedtime: includeBedtime ? bedtime : nil)
+            saveSleepEntry(hours: hoursToSave, interrupted: wasInterrupted, bedtime: bedtimeToSave)
         }
     }
     
@@ -298,11 +356,12 @@ struct SleepLogView: View {
     
     /// Resets the form to initial state
     private func resetForm() {
-        hoursInput = ""
+        selectedHours = 7.0
         wasInterrupted = nil
         bedtime = nil
         includeBedtime = false
     }
+    
     
     /// Creates a user-friendly "time ago" string from a timestamp
     private func timeAgoString(from date: Date) -> String {
@@ -358,6 +417,48 @@ struct PrimaryButtonStyle: ButtonStyle {
             .cornerRadius(10)
             .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Custom Five-Minute DatePicker
+
+/// A custom DatePicker wrapper that enforces 5-minute intervals natively
+struct FiveMinuteDatePicker: UIViewRepresentable {
+    @Binding var selection: Date
+    
+    func makeUIView(context: Context) -> UIDatePicker {
+        let datePicker = UIDatePicker()
+        datePicker.datePickerMode = .time
+        datePicker.preferredDatePickerStyle = .wheels
+        datePicker.minuteInterval = 5 // This is the key - native 5-minute snapping!
+        
+        datePicker.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.dateChanged(_:)),
+            for: .valueChanged
+        )
+        
+        return datePicker
+    }
+    
+    func updateUIView(_ uiView: UIDatePicker, context: Context) {
+        uiView.date = selection
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject {
+        let parent: FiveMinuteDatePicker
+        
+        init(_ parent: FiveMinuteDatePicker) {
+            self.parent = parent
+        }
+        
+        @objc func dateChanged(_ sender: UIDatePicker) {
+            parent.selection = sender.date
+        }
     }
 }
 
